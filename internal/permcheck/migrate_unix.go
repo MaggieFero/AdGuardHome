@@ -1,0 +1,107 @@
+//go:build unix
+
+package permcheck
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+
+	"github.com/AdguardTeam/AdGuardHome/internal/aghos"
+	"github.com/AdguardTeam/golibs/errors"
+	"github.com/AdguardTeam/golibs/logutil/slogutil"
+)
+
+// needsMigration is a Unix-specific implementation of [NeedsMigration].
+//
+// TODO(a.garipov):  Consider ways to detect this better.
+func needsMigration(ctx context.Context, l *slog.Logger, _, confFilePath string) (ok bool) {
+	s, err := os.Stat(confFilePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Likely a first run.  Don't check.
+			return false
+		}
+
+		l.ErrorContext(ctx, "checking a need for permission migration", slogutil.KeyError, err)
+
+		// Unexpected error.  Try to migrate just in case.
+		return true
+	}
+
+	return s.Mode().Perm() != aghos.DefaultPermFile
+}
+
+// migrate is a Unix-specific implementation of [Migrate].
+func migrate(
+	ctx context.Context,
+	l *slog.Logger,
+	workDir string,
+	dataDir string,
+	statsDir string,
+	querylogDir string,
+	confFilePath string,
+) {
+	chmodDir(ctx, l, workDir)
+
+	chmodFile(ctx, l, confFilePath)
+
+	// TODO(a.garipov): Put all paths in one place and remove this duplication.
+	chmodDir(ctx, l, dataDir)
+	chmodDir(ctx, l, filepath.Join(dataDir, "filters"))
+	chmodFile(ctx, l, filepath.Join(dataDir, "sessions.db"))
+	chmodFile(ctx, l, filepath.Join(dataDir, "leases.json"))
+
+	if dataDir != querylogDir {
+		chmodDir(ctx, l, querylogDir)
+	}
+	chmodFile(ctx, l, filepath.Join(querylogDir, "querylog.json"))
+	chmodFile(ctx, l, filepath.Join(querylogDir, "querylog.json.1"))
+
+	if dataDir != statsDir {
+		chmodDir(ctx, l, statsDir)
+	}
+	chmodFile(ctx, l, filepath.Join(statsDir, "stats.db"))
+}
+
+// chmodDir changes the permissions of a single directory.  The results are
+// logged at the appropriate level.
+func chmodDir(ctx context.Context, l *slog.Logger, dirPath string) {
+	chmodPath(ctx, l, dirPath, typeDir, aghos.DefaultPermDir)
+}
+
+// chmodFile changes the permissions of a single file.  The results are logged
+// at the appropriate level.
+func chmodFile(ctx context.Context, l *slog.Logger, filePath string) {
+	chmodPath(ctx, l, filePath, typeFile, aghos.DefaultPermFile)
+}
+
+// chmodPath changes the permissions of a single filesystem entity.  The results
+// are logged at the appropriate level.
+func chmodPath(ctx context.Context, l *slog.Logger, entPath, fileType string, fm fs.FileMode) {
+	switch err := os.Chmod(entPath, fm); {
+	case err == nil:
+		l.InfoContext(ctx, "changed permissions", "type", fileType, "path", entPath)
+	case errors.Is(err, os.ErrNotExist):
+		l.DebugContext(
+			ctx,
+			"changing permissions",
+			"type", fileType,
+			"path", entPath,
+			slogutil.KeyError, err,
+		)
+	default:
+		l.ErrorContext(
+			ctx,
+			"can not change permissions; this can leave your system vulnerable, see "+
+				"https://adguard-dns.io/kb/adguard-home/running-securely/#os-service-concerns",
+			"type", fileType,
+			"path", entPath,
+			"target_perm", fmt.Sprintf("%#o", fm),
+			slogutil.KeyError, err,
+		)
+	}
+}
