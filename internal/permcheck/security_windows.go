@@ -10,21 +10,21 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// securityInfo defines the parts of a security descriptor to retrieve and set.
-const securityInfo windows.SECURITY_INFORMATION = windows.OWNER_SECURITY_INFORMATION |
+// desiredSecInfo defines the parts of a security descriptor to retrieve.
+const desiredSecInfo windows.SECURITY_INFORMATION = windows.OWNER_SECURITY_INFORMATION |
 	windows.DACL_SECURITY_INFORMATION |
 	windows.PROTECTED_DACL_SECURITY_INFORMATION |
 	windows.UNPROTECTED_DACL_SECURITY_INFORMATION
 
 // objectType is the type of the object for directories in context of security
 // API.
-const objectType = windows.SE_FILE_OBJECT
+const objectType windows.SE_OBJECT_TYPE = windows.SE_FILE_OBJECT
 
 // fileDeleteChildRight is the mask bit for the right to delete a child object.
-// It seems to be missing from the windows package.
+// It seems to be missing from the [windows] package.
 //
 // See https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/access-mask.
-const fileDeleteChildRight = 0b1000000
+const fileDeleteChildRight windows.ACCESS_MASK = 0b0100_0000
 
 // fullControlMask is the mask for full control access rights.
 const fullControlMask windows.ACCESS_MASK = windows.FILE_LIST_DIRECTORY |
@@ -78,12 +78,24 @@ func rangeACEs(dacl *windows.ACL, f aceFunc) (err error) {
 }
 
 // setSecurityInfo sets the security information on the specified file, using
-// ents to create a discretionary access control list.
+// ents to create a discretionary access control list.  Both owner and ents can
+// be nil, in which case the corresponding information is not set.
 func setSecurityInfo(fname string, owner *windows.SID, ents []windows.EXPLICIT_ACCESS) (err error) {
-	if len(ents) == 0 {
-		ents = []windows.EXPLICIT_ACCESS{
-			newFullExplicitAccess(owner),
-		}
+	var secInfo windows.SECURITY_INFORMATION
+
+	if len(ents) > 0 {
+		// TODO(e.burkov):  Investigate if this whole set is necessary.
+		secInfo |= windows.DACL_SECURITY_INFORMATION |
+			windows.PROTECTED_DACL_SECURITY_INFORMATION |
+			windows.UNPROTECTED_DACL_SECURITY_INFORMATION
+	}
+
+	if owner != nil {
+		secInfo |= windows.OWNER_SECURITY_INFORMATION
+	}
+
+	if secInfo == 0 {
+		return errors.Error("no security information to set")
 	}
 
 	acl, err := windows.ACLFromEntries(ents, nil)
@@ -91,7 +103,7 @@ func setSecurityInfo(fname string, owner *windows.SID, ents []windows.EXPLICIT_A
 		return fmt.Errorf("creating access control list: %w", err)
 	}
 
-	err = windows.SetNamedSecurityInfo(fname, objectType, securityInfo, owner, nil, acl, nil)
+	err = windows.SetNamedSecurityInfo(fname, objectType, desiredSecInfo, owner, nil, acl, nil)
 	if err != nil {
 		return fmt.Errorf("setting security info: %w", err)
 	}
@@ -101,7 +113,7 @@ func setSecurityInfo(fname string, owner *windows.SID, ents []windows.EXPLICIT_A
 
 // getSecurityInfo retrieves the security information for the specified file.
 func getSecurityInfo(fname string) (dacl *windows.ACL, owner *windows.SID, err error) {
-	sd, err := windows.GetNamedSecurityInfo(fname, objectType, securityInfo)
+	sd, err := windows.GetNamedSecurityInfo(fname, objectType, desiredSecInfo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting security descriptor: %w", err)
 	}

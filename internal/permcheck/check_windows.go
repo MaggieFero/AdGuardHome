@@ -11,6 +11,11 @@ import (
 )
 
 // check is the Windows-specific implementation of [Check].
+//
+// Note, that it only checks the owner and the ACEs of the working directory.
+// This is due to the assumption that the working directory ACEs are inherited
+// by the underlying files and directories, since at least [migrate] sets this
+// inheritance mode.
 func check(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
 	l = l.With("type", typeDir, "path", workDir)
 
@@ -30,6 +35,8 @@ func check(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
 		mask windows.ACCESS_MASK,
 		sid *windows.SID,
 	) (cont bool) {
+		l.DebugContext(ctx, "checking access control entry", "mask", mask, "sid", sid)
+
 		warn := false
 		switch {
 		case hdr.AceType != windows.ACCESS_ALLOWED_ACE_TYPE:

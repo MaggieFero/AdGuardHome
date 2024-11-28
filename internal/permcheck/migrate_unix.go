@@ -98,7 +98,7 @@ func chmodPath(ctx context.Context, l *slog.Logger, fpath string, fm fs.FileMode
 		args = append(args, slogutil.KeyError, err)
 	default:
 		lvl = slog.LevelError
-		msg = "can not change permissions; this can leave your system vulnerable, see " +
+		msg = "cannot change permissions; this can leave your system vulnerable, see " +
 			"https://adguard-dns.io/kb/adguard-home/running-securely/#os-service-concerns"
 		args = append(args, "target_perm", fmt.Sprintf("%#o", fm), slogutil.KeyError, err)
 	}
