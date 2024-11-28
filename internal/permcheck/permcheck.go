@@ -8,8 +8,6 @@ import (
 )
 
 // File type constants for logging.
-//
-// TODO(e.burkov):  !! Use in Windows logging.
 const (
 	typeDir  = "directory"
 	typeFile = "file"

@@ -12,6 +12,8 @@ import (
 
 // needsMigration is the Windows-specific implementation of [NeedsMigration].
 func needsMigration(ctx context.Context, l *slog.Logger, workDir, _ string) (ok bool) {
+	l = l.With("type", typeDir, "path", workDir)
+
 	dacl, owner, err := getSecurityInfo(workDir)
 	if err != nil {
 		l.ErrorContext(ctx, "getting security info", slogutil.KeyError, err)
@@ -54,9 +56,11 @@ func needsMigration(ctx context.Context, l *slog.Logger, workDir, _ string) (ok 
 
 // migrate is the Windows-specific implementation of [Migrate].
 func migrate(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
+	dirLogger := l.With("type", typeDir, "path", workDir)
+
 	dacl, owner, err := getSecurityInfo(workDir)
 	if err != nil {
-		l.ErrorContext(ctx, "getting security info", slogutil.KeyError, err)
+		dirLogger.ErrorContext(ctx, "getting security info", slogutil.KeyError, err)
 
 		return
 	}
@@ -65,9 +69,10 @@ func migrate(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
 		var admins *windows.SID
 		admins, err = windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
 		if err != nil {
+			// This log message is not related to the directory.
 			l.ErrorContext(ctx, "creating administrators sid", slogutil.KeyError, err)
 		} else {
-			l.InfoContext(ctx, "migrating working directory owner", "sid", admins)
+			dirLogger.InfoContext(ctx, "migrating owner", "sid", admins)
 			owner = admins
 		}
 	}
@@ -82,26 +87,26 @@ func migrate(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
 		switch {
 		case hdr.AceType != windows.ACCESS_ALLOWED_ACE_TYPE:
 			// Add non-allowed access control entries as is.
-			l.InfoContext(ctx, "migrating deny control entry", "sid", sid)
+			dirLogger.InfoContext(ctx, "migrating deny control entry", "sid", sid)
 			accessEntries = append(accessEntries, newDenyExplicitAccess(sid, mask))
 		case !sid.IsWellKnown(windows.WinBuiltinAdministratorsSid):
 			// Skip non-administrator ACEs.
-			l.InfoContext(ctx, "removing access control entry", "sid", sid)
+			dirLogger.InfoContext(ctx, "removing access control entry", "sid", sid)
 		default:
-			l.InfoContext(ctx, "migrating access control entry", "sid", sid, "mask", mask)
+			dirLogger.InfoContext(ctx, "migrating access control entry", "sid", sid, "mask", mask)
 			accessEntries = append(accessEntries, newFullExplicitAccess(sid))
 		}
 
 		return true
 	})
 	if err != nil {
-		l.ErrorContext(ctx, "ranging trough access control entries", slogutil.KeyError, err)
+		dirLogger.ErrorContext(ctx, "filtering access control entries", slogutil.KeyError, err)
 
 		return
 	}
 
 	err = setSecurityInfo(workDir, owner, accessEntries)
 	if err != nil {
-		l.ErrorContext(ctx, "setting security info", slogutil.KeyError, err)
+		dirLogger.ErrorContext(ctx, "setting security info", slogutil.KeyError, err)
 	}
 }

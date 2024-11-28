@@ -12,6 +12,8 @@ import (
 
 // check is the Windows-specific implementation of [Check].
 func check(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
+	l = l.With("type", typeDir, "path", workDir)
+
 	dacl, owner, err := getSecurityInfo(workDir)
 	if err != nil {
 		l.ErrorContext(ctx, "getting security info", slogutil.KeyError, err)
@@ -20,12 +22,14 @@ func check(ctx context.Context, l *slog.Logger, workDir, _, _, _, _ string) {
 	}
 
 	if !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
-		l.WarnContext(ctx, "working directory owner is not in administrators group")
+		l.WarnContext(ctx, "owner is not in administrators group")
 	}
 
-	err = rangeACEs(dacl, func(hdr windows.ACE_HEADER, mask windows.ACCESS_MASK, sid *windows.SID) (cont bool) {
-		l.DebugContext(ctx, "checking entry", "sid", sid, "mask", mask)
-
+	err = rangeACEs(dacl, func(
+		hdr windows.ACE_HEADER,
+		mask windows.ACCESS_MASK,
+		sid *windows.SID,
+	) (cont bool) {
 		warn := false
 		switch {
 		case hdr.AceType != windows.ACCESS_ALLOWED_ACE_TYPE:

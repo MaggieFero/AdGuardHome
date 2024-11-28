@@ -25,71 +25,64 @@ func check(
 	querylogDir string,
 	confFilePath string,
 ) {
-	checkDir(ctx, l, workDir)
+	dirLoggger, fileLogger := l.With("type", typeDir), l.With("type", typeFile)
 
-	checkFile(ctx, l, confFilePath)
+	checkDir(ctx, dirLoggger, workDir)
+
+	checkFile(ctx, fileLogger, confFilePath)
 
 	// TODO(a.garipov): Put all paths in one place and remove this duplication.
-	checkDir(ctx, l, dataDir)
-	checkDir(ctx, l, filepath.Join(dataDir, "filters"))
-	checkFile(ctx, l, filepath.Join(dataDir, "sessions.db"))
-	checkFile(ctx, l, filepath.Join(dataDir, "leases.json"))
+	checkDir(ctx, dirLoggger, dataDir)
+	checkDir(ctx, dirLoggger, filepath.Join(dataDir, "filters"))
+	checkFile(ctx, fileLogger, filepath.Join(dataDir, "sessions.db"))
+	checkFile(ctx, fileLogger, filepath.Join(dataDir, "leases.json"))
 
 	if dataDir != querylogDir {
-		checkDir(ctx, l, querylogDir)
+		checkDir(ctx, dirLoggger, querylogDir)
 	}
-	checkFile(ctx, l, filepath.Join(querylogDir, "querylog.json"))
-	checkFile(ctx, l, filepath.Join(querylogDir, "querylog.json.1"))
+	checkFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json"))
+	checkFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json.1"))
 
 	if dataDir != statsDir {
-		checkDir(ctx, l, statsDir)
+		checkDir(ctx, dirLoggger, statsDir)
 	}
-	checkFile(ctx, l, filepath.Join(statsDir, "stats.db"))
+	checkFile(ctx, fileLogger, filepath.Join(statsDir, "stats.db"))
 }
 
 // checkDir checks the permissions of a single directory.  The results are
 // logged at the appropriate level.
 func checkDir(ctx context.Context, l *slog.Logger, dirPath string) {
-	checkPath(ctx, l, dirPath, typeDir, aghos.DefaultPermDir)
+	checkPath(ctx, l, dirPath, aghos.DefaultPermDir)
 }
 
 // checkFile checks the permissions of a single file.  The results are logged at
 // the appropriate level.
 func checkFile(ctx context.Context, l *slog.Logger, filePath string) {
-	checkPath(ctx, l, filePath, typeFile, aghos.DefaultPermFile)
+	checkPath(ctx, l, filePath, aghos.DefaultPermFile)
 }
 
 // checkPath checks the permissions of a single filesystem entity.  The results
 // are logged at the appropriate level.
-func checkPath(ctx context.Context, l *slog.Logger, entPath, fileType string, want fs.FileMode) {
-	s, err := os.Stat(entPath)
+func checkPath(ctx context.Context, l *slog.Logger, fpath string, want fs.FileMode) {
+	l = l.With("path", fpath)
+	s, err := os.Stat(fpath)
 	if err != nil {
-		logFunc := l.ErrorContext
+		lvl := slog.LevelError
 		if errors.Is(err, os.ErrNotExist) {
-			logFunc = l.DebugContext
+			lvl = slog.LevelDebug
 		}
 
-		logFunc(
-			ctx,
-			"checking permissions",
-			"type", fileType,
-			"path", entPath,
-			slogutil.KeyError, err,
-		)
+		l.Log(ctx, lvl, "checking permissions", slogutil.KeyError, err)
 
 		return
 	}
 
 	// TODO(a.garipov): Add a more fine-grained check and result reporting.
 	perm := s.Mode().Perm()
-	if perm != want {
-		l.WarnContext(
-			ctx,
-			"found unexpected permissions",
-			"type", fileType,
-			"path", entPath,
-			"got", fmt.Sprintf("%#o", perm),
-			"want", fmt.Sprintf("%#o", want),
-		)
+	if perm == want {
+		return
 	}
+
+	permOct, wantOct := fmt.Sprintf("%#o", perm), fmt.Sprintf("%#o", want)
+	l.WarnContext(ctx, "found unexpected permissions", "perm", permOct, "want", wantOct)
 }

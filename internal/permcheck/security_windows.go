@@ -16,6 +16,8 @@ const securityInfo windows.SECURITY_INFORMATION = windows.OWNER_SECURITY_INFORMA
 	windows.PROTECTED_DACL_SECURITY_INFORMATION |
 	windows.UNPROTECTED_DACL_SECURITY_INFORMATION
 
+// objectType is the type of the object for directories in context of security
+// API.
 const objectType = windows.SE_FILE_OBJECT
 
 // fileDeleteChildRight is the mask bit for the right to delete a child object.
@@ -41,8 +43,8 @@ const fullControlMask windows.ACCESS_MASK = windows.FILE_LIST_DIRECTORY |
 	windows.SYNCHRONIZE
 
 // aceFunc is a function that handles access control entries in the
-// discretionary access control list.  It should return true to continue ranging
-// or false to stop.
+// discretionary access control list.  It should return true to continue
+// iterating over the entries, or false to stop.
 type aceFunc = func(
 	hdr windows.ACE_HEADER,
 	mask windows.ACCESS_MASK,
@@ -50,7 +52,7 @@ type aceFunc = func(
 ) (cont bool)
 
 // rangeACEs ranges over the access control entries in the discretionary access
-// control list of the specified security descriptor.
+// control list of the specified security descriptor and calls f for each one.
 func rangeACEs(dacl *windows.ACL, f aceFunc) (err error) {
 	var errs []error
 	for i := range uint32(dacl.AceCount) {
@@ -119,15 +121,14 @@ func getSecurityInfo(fname string) (dacl *windows.ACL, owner *windows.SID, err e
 
 // newFullExplicitAccess creates a new explicit access entry with full control
 // permissions.
-func newFullExplicitAccess(sid *windows.SID) (expAcc windows.EXPLICIT_ACCESS) {
-	// TODO(e.burkov):  !! lookup account type
+func newFullExplicitAccess(sid *windows.SID) (accEnt windows.EXPLICIT_ACCESS) {
 	return windows.EXPLICIT_ACCESS{
 		AccessPermissions: fullControlMask,
 		AccessMode:        windows.GRANT_ACCESS,
 		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
 		Trustee: windows.TRUSTEE{
 			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
 			TrusteeValue: windows.TrusteeValueFromSID(sid),
 		},
 	}
@@ -135,15 +136,17 @@ func newFullExplicitAccess(sid *windows.SID) (expAcc windows.EXPLICIT_ACCESS) {
 
 // newDenyExplicitAccess creates a new explicit access entry with specified deny
 // permissions.
-func newDenyExplicitAccess(sid *windows.SID, mask windows.ACCESS_MASK) (expAcc windows.EXPLICIT_ACCESS) {
-	// TODO(e.burkov):  !! lookup account type
+func newDenyExplicitAccess(
+	sid *windows.SID,
+	mask windows.ACCESS_MASK,
+) (accEnt windows.EXPLICIT_ACCESS) {
 	return windows.EXPLICIT_ACCESS{
 		AccessPermissions: mask,
 		AccessMode:        windows.DENY_ACCESS,
 		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
 		Trustee: windows.TRUSTEE{
 			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
 			TrusteeValue: windows.TrusteeValueFromSID(sid),
 		},
 	}

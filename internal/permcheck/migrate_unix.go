@@ -45,63 +45,63 @@ func migrate(
 	querylogDir string,
 	confFilePath string,
 ) {
-	chmodDir(ctx, l, workDir)
+	dirLoggger, fileLogger := l.With("type", typeDir), l.With("type", typeFile)
 
-	chmodFile(ctx, l, confFilePath)
+	chmodDir(ctx, dirLoggger, workDir)
+
+	chmodFile(ctx, fileLogger, confFilePath)
 
 	// TODO(a.garipov): Put all paths in one place and remove this duplication.
-	chmodDir(ctx, l, dataDir)
-	chmodDir(ctx, l, filepath.Join(dataDir, "filters"))
-	chmodFile(ctx, l, filepath.Join(dataDir, "sessions.db"))
-	chmodFile(ctx, l, filepath.Join(dataDir, "leases.json"))
+	chmodDir(ctx, dirLoggger, dataDir)
+	chmodDir(ctx, dirLoggger, filepath.Join(dataDir, "filters"))
+	chmodFile(ctx, fileLogger, filepath.Join(dataDir, "sessions.db"))
+	chmodFile(ctx, fileLogger, filepath.Join(dataDir, "leases.json"))
 
 	if dataDir != querylogDir {
-		chmodDir(ctx, l, querylogDir)
+		chmodDir(ctx, dirLoggger, querylogDir)
 	}
-	chmodFile(ctx, l, filepath.Join(querylogDir, "querylog.json"))
-	chmodFile(ctx, l, filepath.Join(querylogDir, "querylog.json.1"))
+	chmodFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json"))
+	chmodFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json.1"))
 
 	if dataDir != statsDir {
-		chmodDir(ctx, l, statsDir)
+		chmodDir(ctx, dirLoggger, statsDir)
 	}
-	chmodFile(ctx, l, filepath.Join(statsDir, "stats.db"))
+	chmodFile(ctx, fileLogger, filepath.Join(statsDir, "stats.db"))
 }
 
 // chmodDir changes the permissions of a single directory.  The results are
 // logged at the appropriate level.
 func chmodDir(ctx context.Context, l *slog.Logger, dirPath string) {
-	chmodPath(ctx, l, dirPath, typeDir, aghos.DefaultPermDir)
+	chmodPath(ctx, l, dirPath, aghos.DefaultPermDir)
 }
 
 // chmodFile changes the permissions of a single file.  The results are logged
 // at the appropriate level.
 func chmodFile(ctx context.Context, l *slog.Logger, filePath string) {
-	chmodPath(ctx, l, filePath, typeFile, aghos.DefaultPermFile)
+	chmodPath(ctx, l, filePath, aghos.DefaultPermFile)
 }
 
 // chmodPath changes the permissions of a single filesystem entity.  The results
 // are logged at the appropriate level.
-func chmodPath(ctx context.Context, l *slog.Logger, entPath, fileType string, fm fs.FileMode) {
-	switch err := os.Chmod(entPath, fm); {
+func chmodPath(ctx context.Context, l *slog.Logger, fpath string, fm fs.FileMode) {
+	var lvl slog.Level
+	var msg string
+	args := []any{"path", fpath}
+
+	switch err := os.Chmod(fpath, fm); {
 	case err == nil:
-		l.InfoContext(ctx, "changed permissions", "type", fileType, "path", entPath)
+		lvl = slog.LevelInfo
+		msg = "changed permissions"
 	case errors.Is(err, os.ErrNotExist):
-		l.DebugContext(
-			ctx,
-			"changing permissions",
-			"type", fileType,
-			"path", entPath,
-			slogutil.KeyError, err,
-		)
+		lvl = slog.LevelDebug
+		msg = "checking permissions"
+		args = append(args, slogutil.KeyError, err)
 	default:
-		l.ErrorContext(
-			ctx,
-			"can not change permissions; this can leave your system vulnerable, see "+
-				"https://adguard-dns.io/kb/adguard-home/running-securely/#os-service-concerns",
-			"type", fileType,
-			"path", entPath,
-			"target_perm", fmt.Sprintf("%#o", fm),
-			slogutil.KeyError, err,
-		)
+		lvl = slog.LevelError
+		msg = "can not change permissions; this can leave your system vulnerable, see " +
+			"https://adguard-dns.io/kb/adguard-home/running-securely/#os-service-concerns"
+		args = append(args, "target_perm", fmt.Sprintf("%#o", fm), slogutil.KeyError, err)
 	}
+
+	l.Log(ctx, lvl, msg, args...)
 }
