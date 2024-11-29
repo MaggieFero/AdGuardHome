@@ -57,7 +57,10 @@ func needsMigration(ctx context.Context, l *slog.Logger, workDir, _ string) (ok 
 
 // migrate is the Windows-specific implementation of [Migrate].
 //
-// It
+// It sets the owner to administrators and adds a full control access control
+// entry for the account.  It also removes all non-administrator access control
+// entries, and keeps deny access control entries.  For any created or modified
+// entry it sets the propagation flags to be inherited by child objects.
 func migrate(ctx context.Context, logger *slog.Logger, workDir, _, _, _, _ string) {
 	l := logger.With("type", typeDir, "path", workDir)
 
@@ -80,7 +83,7 @@ func migrate(ctx context.Context, logger *slog.Logger, workDir, _, _, _, _ strin
 
 	// TODO(e.burkov):  Check for duplicates?
 	var accessEntries []windows.EXPLICIT_ACCESS
-	var useACL bool
+	var setACL bool
 	// Iterate over the access control entries in DACL to determine if its
 	// migration is needed.
 	err = rangeACEs(dacl, func(
@@ -94,18 +97,18 @@ func migrate(ctx context.Context, logger *slog.Logger, workDir, _, _, _, _ strin
 			// the access restrictions, which shouldn't be lost.
 			l.InfoContext(ctx, "migrating deny access control entry", "sid", sid)
 			accessEntries = append(accessEntries, newDenyExplicitAccess(sid, mask))
-			useACL = true
+			setACL = true
 		case !sid.IsWellKnown(windows.WinBuiltinAdministratorsSid):
 			// Remove non-administrator ACEs, since such accounts should not
 			// have any access rights.
 			l.InfoContext(ctx, "removing access control entry", "sid", sid)
-			useACL = true
+			setACL = true
 		default:
 			// Administrators should have full control.  Don't add a new entry
 			// here since it will be added later in case there are other
 			// required entries.
 			l.InfoContext(ctx, "migrating access control entry", "sid", sid, "mask", mask)
-			useACL = useACL || mask&fullControlMask != fullControlMask
+			setACL = setACL || mask&fullControlMask != fullControlMask
 		}
 
 		return true
@@ -116,7 +119,7 @@ func migrate(ctx context.Context, logger *slog.Logger, workDir, _, _, _, _ strin
 		return
 	}
 
-	if useACL {
+	if setACL {
 		accessEntries = append(accessEntries, newFullExplicitAccess(owner))
 	}
 

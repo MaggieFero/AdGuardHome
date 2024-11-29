@@ -4,11 +4,8 @@ package permcheck
 
 import (
 	"context"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/AdguardTeam/AdGuardHome/internal/aghos"
 	"github.com/AdguardTeam/golibs/errors"
@@ -47,26 +44,13 @@ func migrate(
 ) {
 	dirLoggger, fileLogger := l.With("type", typeDir), l.With("type", typeFile)
 
-	chmodDir(ctx, dirLoggger, workDir)
-
-	chmodFile(ctx, fileLogger, confFilePath)
-
-	// TODO(a.garipov): Put all paths in one place and remove this duplication.
-	chmodDir(ctx, dirLoggger, dataDir)
-	chmodDir(ctx, dirLoggger, filepath.Join(dataDir, "filters"))
-	chmodFile(ctx, fileLogger, filepath.Join(dataDir, "sessions.db"))
-	chmodFile(ctx, fileLogger, filepath.Join(dataDir, "leases.json"))
-
-	if dataDir != querylogDir {
-		chmodDir(ctx, dirLoggger, querylogDir)
+	for _, ent := range entities(workDir, dataDir, statsDir, querylogDir, confFilePath) {
+		if ent.Value {
+			chmodDir(ctx, dirLoggger, ent.Key)
+		} else {
+			chmodFile(ctx, fileLogger, ent.Key)
+		}
 	}
-	chmodFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json"))
-	chmodFile(ctx, fileLogger, filepath.Join(querylogDir, "querylog.json.1"))
-
-	if dataDir != statsDir {
-		chmodDir(ctx, dirLoggger, statsDir)
-	}
-	chmodFile(ctx, fileLogger, filepath.Join(statsDir, "stats.db"))
 }
 
 // chmodDir changes the permissions of a single directory.  The results are
@@ -79,29 +63,4 @@ func chmodDir(ctx context.Context, l *slog.Logger, dirPath string) {
 // at the appropriate level.
 func chmodFile(ctx context.Context, l *slog.Logger, filePath string) {
 	chmodPath(ctx, l, filePath, aghos.DefaultPermFile)
-}
-
-// chmodPath changes the permissions of a single filesystem entity.  The results
-// are logged at the appropriate level.
-func chmodPath(ctx context.Context, l *slog.Logger, fpath string, fm fs.FileMode) {
-	var lvl slog.Level
-	var msg string
-	args := []any{"path", fpath}
-
-	switch err := os.Chmod(fpath, fm); {
-	case err == nil:
-		lvl = slog.LevelInfo
-		msg = "changed permissions"
-	case errors.Is(err, os.ErrNotExist):
-		lvl = slog.LevelDebug
-		msg = "checking permissions"
-		args = append(args, slogutil.KeyError, err)
-	default:
-		lvl = slog.LevelError
-		msg = "cannot change permissions; this can leave your system vulnerable, see " +
-			"https://adguard-dns.io/kb/adguard-home/running-securely/#os-service-concerns"
-		args = append(args, "target_perm", fmt.Sprintf("%#o", fm), slogutil.KeyError, err)
-	}
-
-	l.Log(ctx, lvl, msg, args...)
 }
