@@ -20,6 +20,8 @@ import (
 type entity = container.KeyValue[string, bool]
 
 // entities returns a list of filesystem entities that need to be ranged over.
+//
+// TODO(a.garipov): Put all paths in one place and remove this duplication.
 func entities(workDir, dataDir, statsDir, querylogDir, confFilePath string) (ents []entity) {
 	ents = []entity{{
 		Key:   workDir,
