@@ -10,12 +10,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// desiredSecInfo defines the parts of a security descriptor to retrieve.
-const desiredSecInfo windows.SECURITY_INFORMATION = windows.OWNER_SECURITY_INFORMATION |
-	windows.DACL_SECURITY_INFORMATION |
-	windows.PROTECTED_DACL_SECURITY_INFORMATION |
-	windows.UNPROTECTED_DACL_SECURITY_INFORMATION
-
 // objectType is the type of the object for directories in context of security
 // API.
 const objectType windows.SE_OBJECT_TYPE = windows.SE_FILE_OBJECT
@@ -103,7 +97,7 @@ func setSecurityInfo(fname string, owner *windows.SID, ents []windows.EXPLICIT_A
 		return fmt.Errorf("creating access control list: %w", err)
 	}
 
-	err = windows.SetNamedSecurityInfo(fname, objectType, desiredSecInfo, owner, nil, acl, nil)
+	err = windows.SetNamedSecurityInfo(fname, objectType, secInfo, owner, nil, acl, nil)
 	if err != nil {
 		return fmt.Errorf("setting security info: %w", err)
 	}
@@ -113,6 +107,12 @@ func setSecurityInfo(fname string, owner *windows.SID, ents []windows.EXPLICIT_A
 
 // getSecurityInfo retrieves the security information for the specified file.
 func getSecurityInfo(fname string) (dacl *windows.ACL, owner *windows.SID, err error) {
+	// desiredSecInfo defines the parts of a security descriptor to retrieve.
+	const desiredSecInfo windows.SECURITY_INFORMATION = windows.OWNER_SECURITY_INFORMATION |
+		windows.DACL_SECURITY_INFORMATION |
+		windows.PROTECTED_DACL_SECURITY_INFORMATION |
+		windows.UNPROTECTED_DACL_SECURITY_INFORMATION
+
 	sd, err := windows.GetNamedSecurityInfo(fname, objectType, desiredSecInfo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting security descriptor: %w", err)

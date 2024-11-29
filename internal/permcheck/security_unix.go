@@ -21,7 +21,7 @@ type entity = container.KeyValue[string, bool]
 
 // entities returns a list of filesystem entities that need to be ranged over.
 func entities(workDir, dataDir, statsDir, querylogDir, confFilePath string) (ents []entity) {
-	ents = container.KeyValues[string, bool]{{
+	ents = []entity{{
 		Key:   workDir,
 		Value: true,
 	}, {
@@ -47,13 +47,13 @@ func entities(workDir, dataDir, statsDir, querylogDir, confFilePath string) (ent
 			Value: true,
 		})
 	}
-	ents = append(ents, []entity{{
+	ents = append(ents, entity{
 		Key:   filepath.Join(querylogDir, "querylog.json"),
 		Value: false,
-	}, {
+	}, entity{
 		Key:   filepath.Join(querylogDir, "querylog.json.1"),
 		Value: false,
-	}}...)
+	})
 
 	if dataDir != statsDir {
 		ents = append(ents, entity{
